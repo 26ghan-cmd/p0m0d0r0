@@ -1,8 +1,9 @@
 """
-Pomodoro — study sessions that lock distracting apps.
+Pomodoro — study sessions that lock distracting apps and websites.
 
-Pick a session length, optional breaks, and the apps you're allowed to use.
-During study blocks every other app is closed the moment it opens.
+Pick a session length, optional breaks, and the apps (and, on macOS, the
+websites) you're allowed to use. During study blocks every other app is
+closed the moment it opens, and tabs on other websites are closed.
 During breaks (and when the session ends) everything is unlocked.
 
 Run:   python pomodoro.py
@@ -15,6 +16,7 @@ import tkinter.font as tkfont
 from tkinter import messagebox, ttk
 
 import engine
+import sites
 from engine import BREAK, DONE, STUDY
 
 STUDY_COLOR = "#2563eb"
@@ -38,12 +40,16 @@ class PomodoroApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title("Pomodoro")
-        root.minsize(620, 560)
+        root.minsize(620, 600)
 
         self.cfg = engine.load_config()
         self.allowed = list(self.cfg.get("allowed", []))
+        self.allowed_sites = list(self.cfg.get("allowed_sites", []))
         self.session = None
         self.loop = None
+        self.site_loop = None
+        self.problem_queue = queue.Queue()
+        self.sites_on = False
         self.closed_queue = queue.Queue()
         self.closed_counts = {}
         self.last_phase = None
@@ -101,10 +107,17 @@ class PomodoroApp:
         self.plan_label = ttk.Label(f, foreground=MUTED, wraplength=560)
         self.plan_label.grid(row=2, column=0, sticky="w", pady=(6, 10))
 
-        # --- allowed apps picker
-        box = ttk.LabelFrame(f, text="Allowed apps — everything else closes during study time",
-                             padding=10)
-        box.grid(row=3, column=0, sticky="nsew")
+        # --- Apps | Websites tabs
+        tabs = ttk.Notebook(f)
+        tabs.grid(row=3, column=0, sticky="nsew")
+        box = ttk.Frame(tabs, padding=10)
+        tabs.add(box, text="  Allowed apps  ")
+        sites_tab = ttk.Frame(tabs, padding=10)
+        tabs.add(sites_tab, text="  Allowed websites  ")
+        self._build_sites_tab(sites_tab)
+
+        ttk.Label(box, text="Everything not on the Allowed list closes during study time.",
+                  foreground=MUTED, font=self.f_small).grid(row=3, column=0, columnspan=3, sticky="w")
         box.columnconfigure(0, weight=1)
         box.columnconfigure(2, weight=1)
         box.rowconfigure(1, weight=1)
@@ -154,10 +167,80 @@ class PomodoroApp:
             row=0, column=1, sticky="e", ipadx=12, ipady=4)
         return f
 
+    def _build_sites_tab(self, t: ttk.Frame):
+        t.columnconfigure(0, weight=1)
+        t.rowconfigure(2, weight=1)
+        supported = sites.website_limits_supported()
+        self.var_limit_sites = tk.BooleanVar(value=bool(self.cfg.get("limit_sites", False)))
+        ttk.Checkbutton(t, text="Only allow these websites while studying",
+                        variable=self.var_limit_sites,
+                        state="normal" if supported else "disabled").grid(row=0, column=0, sticky="w")
+        ttk.Label(t, text=(
+            "Tabs on any other website are closed during study time, in Safari, Chrome, Edge, "
+            "Brave, Arc, Chromium and Vivaldi. Breaks unlock every site."
+            if supported else "Website limits currently work on macOS only."),
+            foreground=MUTED, font=self.f_small, wraplength=560, justify="left").grid(
+            row=1, column=0, sticky="w", pady=(2, 8))
+
+        lst = ttk.Frame(t)
+        lst.grid(row=2, column=0, sticky="nsew")
+        lst.columnconfigure(0, weight=1)
+        lst.rowconfigure(0, weight=1)
+        self.lb_sites = tk.Listbox(lst, selectmode="extended", exportselection=False, height=7)
+        self.lb_sites.grid(row=0, column=0, sticky="nsew")
+        self.lb_sites.bind("<Double-Button-1>", lambda _e: self.remove_sites())
+        ttk.Button(lst, text="Remove", command=self.remove_sites).grid(
+            row=0, column=1, sticky="n", padx=(8, 0))
+
+        add = ttk.Frame(t)
+        add.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        add.columnconfigure(1, weight=1)
+        ttk.Label(add, text="Add website:").grid(row=0, column=0, padx=(0, 6))
+        self.var_site = tk.StringVar()
+        entry = ttk.Entry(add, textvariable=self.var_site)
+        entry.grid(row=0, column=1, sticky="ew")
+        entry.bind("<Return>", lambda _e: self.add_site())
+        ttk.Button(add, text="Add", command=self.add_site).grid(row=0, column=2, padx=(6, 0))
+        ttk.Label(add, text=(
+            "Examples: instructure.com (Canvas), docs.google.com, wikipedia.org, "
+            "google.com/search (Google search only, not Gmail). A site includes its subdomains. "
+            "Google, Microsoft, Apple, Okta and Duo sign-in pages always work. If your school's "
+            "login page gets closed, add it here too."),
+            foreground=MUTED, font=self.f_small, wraplength=560, justify="left").grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        if not supported:
+            for child in (entry,):
+                child.config(state="disabled")
+        self.refresh_sites()
+
+    # ---------------------------------------------------------- websites
+    def refresh_sites(self):
+        self.lb_sites.delete(0, "end")
+        for s in self.allowed_sites:
+            self.lb_sites.insert("end", s)
+
+    def add_site(self):
+        parsed = sites.parse_site(self.var_site.get())
+        if parsed is None:
+            if self.var_site.get().strip():
+                messagebox.showerror("Pomodoro", "That doesn't look like a website. "
+                                                 "Try something like docs.google.com")
+            return
+        label = sites.site_label(parsed)
+        if label not in self.allowed_sites:
+            self.allowed_sites.append(label)
+        self.var_site.set("")
+        self.refresh_sites()
+
+    def remove_sites(self):
+        drop = {self.lb_sites.get(i) for i in self.lb_sites.curselection()}
+        self.allowed_sites = [s for s in self.allowed_sites if s not in drop]
+        self.refresh_sites()
+
     def _build_session(self) -> ttk.Frame:
         f = ttk.Frame(self.root, padding=24)
         f.columnconfigure(0, weight=1)
-        f.rowconfigure(6, weight=1)
+        f.rowconfigure(7, weight=1)
 
         self.lbl_phase = tk.Label(f, text="", font=self.f_phase)
         self.lbl_phase.grid(row=0, column=0)
@@ -171,16 +254,18 @@ class PomodoroApp:
         self.lbl_total.grid(row=4, column=0)
         self.lbl_allowed = ttk.Label(f, text="", foreground=MUTED, wraplength=540, justify="center")
         self.lbl_allowed.grid(row=5, column=0, pady=(10, 6))
+        self.lbl_problem = tk.Label(f, text="", fg="#dc2626", wraplength=540, justify="left")
+        self.lbl_problem.grid(row=6, column=0)
 
         log = ttk.LabelFrame(f, text="Blocked this session", padding=8)
-        log.grid(row=6, column=0, sticky="nsew", pady=(6, 0))
+        log.grid(row=7, column=0, sticky="nsew", pady=(6, 0))
         log.columnconfigure(0, weight=1)
         log.rowconfigure(0, weight=1)
         self.lb_closed = tk.Listbox(log, height=5, activestyle="none")
         self.lb_closed.grid(row=0, column=0, sticky="nsew")
 
         self.btn_end = ttk.Button(f, text="End session early", command=self.end_early)
-        self.btn_end.grid(row=7, column=0, pady=(14, 0))
+        self.btn_end.grid(row=8, column=0, pady=(14, 0))
         return f
 
     def show_setup(self):
@@ -288,8 +373,10 @@ class PomodoroApp:
             messagebox.showerror("Pomodoro", str(e))
             return
 
+        limit_sites = self.var_limit_sites.get() and sites.website_limits_supported()
         self.cfg.update(duration_min=duration, break_every_min=every, break_len_min=blen,
-                        strict=self.var_strict.get(), allowed=self.allowed)
+                        strict=self.var_strict.get(), allowed=self.allowed,
+                        limit_sites=self.var_limit_sites.get(), allowed_sites=self.allowed_sites)
         engine.save_config(self.cfg)
 
         enforcer = engine.Enforcer(self.allowed)
@@ -302,24 +389,38 @@ class PomodoroApp:
         if open_now:
             msg += ("These open apps are not allowed and will close right away:\n  • "
                     + "\n  • ".join(open_now) + "\n\nSave your work in them first.\n\n")
+        if limit_sites:
+            msg += self._sites_notice() + "\n\n"
         if self.var_strict.get():
             msg += "Strict mode is on: you won't be able to end the session early."
         if not messagebox.askokcancel("Start session", msg.strip()):
             return
 
         self.lbl_banner.config(text="")
+        self.lbl_problem.config(text="")
+        self.sites_on = limit_sites
         self.session = engine.Session(schedule)
         self.closed_counts = {}
         self.lb_closed.delete(0, "end")
         self.last_phase = None
-        self.loop = engine.EnforcementLoop(
-            enforcer,
-            should_enforce=lambda: self.session is not None and self.session.status().phase == STUDY,
-            on_closed=self.closed_queue.put)
+        studying = lambda: self.session is not None and self.session.status().phase == STUDY
+        self.loop = engine.EnforcementLoop(enforcer, should_enforce=studying,
+                                           on_closed=self.closed_queue.put)
         self.loop.start()
+        if limit_sites:
+            self.site_loop = sites.SiteLoop(
+                sites.SiteGuard(self.allowed_sites),
+                running_apps=enforcer.allowed_running,
+                should_enforce=studying,
+                on_closed=lambda host: self.closed_queue.put(f"{host} (website)"),
+                on_problem=self.problem_queue.put)
+            self.site_loop.start()
 
         allowed_txt = ", ".join(sorted(self.allowed, key=str.lower)) or "none"
-        self.lbl_allowed.config(text=f"Allowed during study: {allowed_txt}")
+        text = f"Allowed apps: {allowed_txt}"
+        if limit_sites:
+            text += "\nAllowed websites: " + (", ".join(self.allowed_sites) or "none")
+        self.lbl_allowed.config(text=text)
         if self.var_strict.get():
             self.btn_end.config(text="Strict mode — can't end early", state="disabled")
         else:
@@ -328,10 +429,35 @@ class PomodoroApp:
         self.show_session()
         self.tick()
 
+    def _sites_notice(self) -> str:
+        """What the start dialog says about websites."""
+        allowed = {engine.normalize(a) for a in self.allowed}
+        ok = [b for b in sites.SUPPORTED_BROWSERS if engine.normalize(b) in allowed]
+        blind = [b for b in sites.UNSUPPORTED_BROWSERS if engine.normalize(b) in allowed]
+        if not ok and not blind:
+            return ("Websites: no browser is on your allowed apps list, so browsers will be "
+                    "closed anyway. Allow a browser (like Safari or Chrome) to use websites.")
+        site_txt = ", ".join(self.allowed_sites) or "no websites (only new-tab pages)"
+        out = []
+        if ok:
+            out.append(f"Websites: only {site_txt} can stay open in {', '.join(ok)}. "
+                       "Tabs on other sites will close.")
+            out.append("The first time, macOS asks to let Pomodoro control each browser. "
+                       "Click OK, or website limits won't work.")
+        if blind:
+            out.append(f"Heads up: Pomodoro can't see tabs in {', '.join(blind)}, so websites "
+                       "there won't be limited. Remove it from allowed apps to stay strict.")
+        return "\n".join(out)
+
     def tick(self):
         if self.session is None:
             return
         self._drain_closed()
+        try:
+            while True:
+                self.lbl_problem.config(text="⚠ " + self.problem_queue.get_nowait())
+        except queue.Empty:
+            pass
         st = self.session.status()
         if st.phase == DONE:
             self.finish()
@@ -356,11 +482,12 @@ class PomodoroApp:
         if phase == STUDY:
             self.lbl_phase.config(text="Focus time", fg=STUDY_COLOR)
             self.lbl_clock.config(fg=STUDY_COLOR)
-            self.lbl_sub.config(text="Only your allowed apps can run.")
+            self.lbl_sub.config(text="Only your allowed apps and websites can be used."
+                                if self.sites_on else "Only your allowed apps can run.")
         else:
-            self.lbl_phase.config(text="Break — apps unlocked", fg=BREAK_COLOR)
+            self.lbl_phase.config(text="Break — everything unlocked", fg=BREAK_COLOR)
             self.lbl_clock.config(fg=BREAK_COLOR)
-            self.lbl_sub.config(text="Stretch, grab water. Apps lock again when the timer ends.")
+            self.lbl_sub.config(text="Stretch, grab water. Things lock again when the timer ends.")
         if not first:
             self._get_attention()
 
@@ -394,13 +521,16 @@ class PomodoroApp:
     def end_early(self):
         if self.session is None or self.var_strict.get():
             return
-        if messagebox.askyesno("End session", "End this study session now? All apps will unlock."):
+        if messagebox.askyesno("End session", "End this study session now? Everything will unlock."):
             self.session.end_early()
 
     def _stop_session(self):
         if self.loop:
             self.loop.stop()
             self.loop = None
+        if self.site_loop:
+            self.site_loop.stop()
+            self.site_loop = None
         self.session = None
         self.last_phase = None
 
@@ -411,11 +541,11 @@ class PomodoroApp:
         self._stop_session()  # signals the blocker thread; never waits on it
         # No popup here: a modal dialog at this moment is what froze macOS.
         if early:
-            self.lbl_banner.config(text="Session ended early. All apps are unlocked.")
+            self.lbl_banner.config(text="Session ended early. Everything is unlocked.")
         else:
             self.lbl_banner.config(
                 text=f"✓ Session complete, nice work! Distractions blocked: {blocked}. "
-                     "All apps are unlocked.")
+                     "Everything is unlocked.")
         self.show_setup()
         self._get_attention()
 

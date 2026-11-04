@@ -43,6 +43,11 @@ jobs:
         run: |
           pyinstaller --noconfirm --windowed --name Pomodoro \
             --osx-bundle-identifier io.github.p0m0d0r0.pomodoro pomodoro.py
+          # Without this text, macOS silently refuses to let the app read browser tabs
+          # instead of asking the user for permission.
+          /usr/libexec/PlistBuddy -c "Add :NSAppleEventsUsageDescription string 'Pomodoro checks which websites are open in your browser during study time and closes tabs on sites you have not allowed.'" dist/Pomodoro.app/Contents/Info.plist
+          codesign --force --deep --sign - dist/Pomodoro.app   # re-sign after editing Info.plist
+          codesign --verify --deep --strict dist/Pomodoro.app
           ditto -c -k --keepParent dist/Pomodoro.app "${{ matrix.asset }}"
 
       - name: Build Windows app

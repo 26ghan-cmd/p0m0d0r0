@@ -55,6 +55,8 @@ DEFAULT_CONFIG = {
     "break_len_min": 10,
     "strict": False,
     "allowed": [],
+    "limit_sites": False,
+    "allowed_sites": [],
 }
 
 
@@ -291,17 +293,28 @@ class Enforcer:
         self.allowed = {normalize(a) for a in allowed} | {normalize(a) for a in ALWAYS_ALLOWED}
         self.lister = lister
         self.protected = _protected_pids()
+        # Snapshot of the last scan, read by the website guard thread.
+        self.last_running: List[str] = []
+        self.last_blocked: List[str] = []
 
     def blocked_now(self) -> Dict[str, List[psutil.Process]]:
         """Apps running right now that are not allowed."""
+        running = self.lister()
         out = {}
-        for name, procs in self.lister().items():
+        for name, procs in running.items():
             if normalize(name) in self.allowed:
                 continue
             if any(p.pid in self.protected for p in procs):
                 continue
             out[name] = procs
+        self.last_running = list(running.keys())
+        self.last_blocked = list(out.keys())
         return out
+
+    def allowed_running(self) -> List[str]:
+        """Apps from the last scan that are running and allowed to stay open."""
+        blocked = set(self.last_blocked)
+        return [n for n in self.last_running if n not in blocked]
 
     def sweep(self) -> List[str]:
         """Close every app that isn't allowed. Returns names of apps closed."""
