@@ -17,6 +17,7 @@ from tkinter import messagebox, ttk
 
 import engine
 import sites
+import updater
 from engine import BREAK, DONE, STUDY
 
 STUDY_COLOR = "#2563eb"
@@ -56,12 +57,15 @@ class PomodoroApp:
         self.running_names = []
         self.scan_results = queue.Queue()
         self.scanning = False
+        self.update = None
+        self.update_queue = queue.Queue()
 
         self._fonts()
         self.setup_frame = self._build_setup()
         self.session_frame = self._build_session()
         self.show_setup()
         root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.check_updates()
 
         if not engine.platform_supported():
             messagebox.showwarning(
@@ -165,7 +169,72 @@ class PomodoroApp:
         self.lbl_banner.grid(row=0, column=0, sticky="w")
         ttk.Button(bottom, text="Start session", command=self.start).grid(
             row=0, column=1, sticky="e", ipadx=12, ipady=4)
+
+        # Shown only when a newer version is available.
+        self.update_bar = tk.Frame(f, bg="#eff6ff", padx=10, pady=8)
+        self.update_bar.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        self.update_bar.columnconfigure(0, weight=1)
+        self.lbl_update = tk.Label(self.update_bar, text="", bg="#eff6ff", fg="#1e3a8a",
+                                   anchor="w", justify="left", wraplength=440)
+        self.lbl_update.grid(row=0, column=0, sticky="w")
+        self.btn_update = ttk.Button(self.update_bar, text="Update now", command=self.install_update)
+        self.btn_update.grid(row=0, column=1, sticky="e")
+        self.update_bar.grid_remove()
         return f
+
+    # ------------------------------------------------------------ updates
+    def check_updates(self):
+        """Ask GitHub for a newer build in the background (downloaded app only)."""
+        if not updater.is_packaged():
+            return
+        updater.cleanup_leftovers()
+
+        def work():
+            try:
+                self.update_queue.put(("found", updater.check_for_update()))
+            except Exception:
+                pass  # offline or GitHub unreachable: just skip the check
+        threading.Thread(target=work, daemon=True).start()
+        self.root.after(500, self._poll_update)
+
+    def _poll_update(self):
+        try:
+            kind, value = self.update_queue.get_nowait()
+        except queue.Empty:
+            self.root.after(300, self._poll_update)
+            return
+        if kind == "found" and value is not None:
+            self.update = value
+            self.lbl_update.config(text="A new version of Pomodoro is available.")
+            self.btn_update.config(text="Update now", state="normal")
+            self.update_bar.grid()
+        elif kind == "progress":
+            self.lbl_update.config(text=f"Downloading update… {int(value * 100)}%")
+            self.root.after(200, self._poll_update)
+        elif kind == "done":
+            self.lbl_update.config(text="Update installed. Restarting Pomodoro…")
+            self.root.after(800, self.root.destroy)
+        elif kind == "error":
+            self.lbl_update.config(text=f"{value}\nYou can also download it again from "
+                                        f"{updater.RELEASES_PAGE}")
+            self.btn_update.config(text="Try again", state="normal")
+
+    def install_update(self):
+        if self.session is not None or self.update is None:
+            return
+        self.btn_update.config(state="disabled")
+        self.lbl_update.config(text="Downloading update…")
+
+        def work():
+            try:
+                updater.install(self.update, progress=lambda p: self.update_queue.put(("progress", p)))
+                self.update_queue.put(("done", None))
+            except updater.UpdateError as e:
+                self.update_queue.put(("error", str(e)))
+            except Exception as e:
+                self.update_queue.put(("error", f"Couldn't install the update ({e})."))
+        threading.Thread(target=work, daemon=True).start()
+        self.root.after(200, self._poll_update)
 
     def _build_sites_tab(self, t: ttk.Frame):
         t.columnconfigure(0, weight=1)
@@ -204,8 +273,8 @@ class PomodoroApp:
         ttk.Label(add, text=(
             "Examples: instructure.com (Canvas), docs.google.com, wikipedia.org, "
             "google.com/search (Google search only, not Gmail). A site includes its subdomains. "
-            "Google, Microsoft, Apple, Okta and Duo sign-in pages always work. If your school's "
-            "login page gets closed, add it here too."),
+            "Searching (Google, Bing, DuckDuckGo) and the Google, Microsoft, Apple, Okta and Duo "
+            "sign-in pages always work. If your school's login page gets closed, add it here too."),
             foreground=MUTED, font=self.f_small, wraplength=560, justify="left").grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
         if not supported:

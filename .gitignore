@@ -4,3 +4,4 @@ build/
 dist/
 *.spec
 .venv/
+build_info.py

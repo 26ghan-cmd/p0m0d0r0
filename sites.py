@@ -37,6 +37,17 @@ ALWAYS_ALLOWED_SITES = [
 
 Site = Tuple[str, str]  # (host, path prefix or "")
 
+# Searching always works in an allowed browser: search engines' home pages,
+# result pages and result-click redirects. Other parts of those sites (Gmail,
+# YouTube, Maps...) still follow the user's list. These match the exact domain
+# only (not subdomains like news.google.com). A path of "/" means the home page only.
+ALWAYS_ALLOWED_SEARCH: List[Site] = [
+    ("google.com", "/"), ("google.com", "/search"), ("google.com", "/url"),
+    ("google.com", "/webhp"), ("google.com", "/_/chrome/newtab"),
+    ("bing.com", "/"), ("bing.com", "/search"), ("bing.com", "/ck"),
+    ("duckduckgo.com", ""), ("ecosia.org", ""), ("search.yahoo.com", ""),
+]
+
 
 def website_limits_supported() -> bool:
     return IS_MAC
@@ -73,12 +84,13 @@ def site_label(site: Site) -> str:
     return site[0] + site[1]
 
 
-def url_allowed(url: str, allowed: Iterable[Site]) -> bool:
+def url_allowed(url: str, allowed: Iterable[Site], exact: Iterable[Site] = ()) -> bool:
     """True if this tab's URL may stay open.
 
     Only http(s) pages are checked; new-tab pages, settings pages, local
-    files etc. are always fine. A site also allows its subdomains
-    ('instructure.com' allows 'myschool.instructure.com').
+    files etc. are always fine. A site in `allowed` also allows its subdomains
+    ('instructure.com' allows 'myschool.instructure.com'); a site in `exact`
+    only allows that exact domain.
     """
     url = (url or "").strip()
     if not url.lower().startswith(("http://", "https://")):
@@ -91,10 +103,11 @@ def url_allowed(url: str, allowed: Iterable[Site]) -> bool:
     if host.startswith("www."):
         host = host[4:]
     path = parts.path or "/"
-    for a_host, a_path in allowed:
-        if host == a_host or host.endswith("." + a_host):
-            if not a_path or path == a_path or path.startswith(a_path + "/"):
-                return True
+    for sites_list, subdomains in ((allowed, True), (exact, False)):
+        for a_host, a_path in sites_list:
+            if host == a_host or (subdomains and host.endswith("." + a_host)):
+                if not a_path or path == a_path or path.startswith(a_path + "/"):
+                    return True
     return False
 
 
@@ -185,8 +198,12 @@ class SiteGuard:
                  runner: Callable[[str], Tuple[int, str, str]] = run_osascript):
         parsed = [parse_site(s) for s in list(allowed_sites) + ALWAYS_ALLOWED_SITES]
         self.allowed: List[Site] = [p for p in parsed if p]
+        self.exact: List[Site] = list(ALWAYS_ALLOWED_SEARCH)
         self.runner = runner
         self.reported: set = set()
+
+    def allows(self, url: str) -> bool:
+        return url_allowed(url, self.allowed, self.exact)
 
     def sweep(self, running_apps: Iterable[str]) -> Tuple[List[str], List[str]]:
         """Close disallowed tabs in every running supported browser.
@@ -203,7 +220,7 @@ class SiteGuard:
                     self.reported.add(browser)
                     problems.append(permission_message(browser))
                 continue
-            bad = [tab for tab in parse_tab_list(out) if not url_allowed(tab[2], self.allowed)]
+            bad = [tab for tab in parse_tab_list(out) if not self.allows(tab[2])]
             if not bad:
                 continue
             code, _, _ = self.runner(close_tabs_script(browser, bad))

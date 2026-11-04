@@ -32,7 +32,15 @@ xattr -dr com.apple.quarantine /Applications/Pomodoro.app
 
 **Windows.** If a blue SmartScreen box appears, click **More info → Run anyway**.
 
-These downloads are rebuilt automatically every time code is pushed to `main`.
+### Updates
+
+Pomodoro updates itself. When it opens, it checks for a newer version, and if there is one, a blue **Update now** bar appears at the bottom of the setup screen. Click it, and Pomodoro downloads the new version, swaps it in and restarts. You don't need to download anything again, and the "Open Anyway" step above is only ever needed once.
+
+- On a Mac, keep Pomodoro in your **Applications** folder so it can update itself.
+- After an update, macOS may ask again whether Pomodoro can control your browser (for website limits). Click **OK**.
+- Copies downloaded before the updater existed (before November 4, 2026) can't update themselves. Download it one last time from the Releases page.
+
+New versions are built automatically every time code is pushed to `main`.
 
 ## Run from the code (double-click launcher)
 
@@ -41,7 +49,7 @@ Clone or download this repo, then double-click:
 - **Mac:** `Start Pomodoro.command`
 - **Windows:** `Start Pomodoro.bat`
 
-The first run installs what it needs (about 30 seconds). After that it opens right away. If Python isn't installed, the launcher opens the python.org download page for you. On a Mac, if the launcher is blocked the first time, right-click it and choose **Open**.
+The first run installs what it needs (about 30 seconds). After that it opens right away. If you got the folder with `git clone`, the launcher also downloads the latest version each time it starts. If Python isn't installed, the launcher opens the python.org download page for you. On a Mac, if the launcher is blocked the first time, right-click it and choose **Open**.
 
 Or run it from a terminal:
 
@@ -70,6 +78,7 @@ When **Only allow these websites while studying** is on, Pomodoro checks your br
 - **Browsers it can watch:** Safari, Google Chrome, Microsoft Edge, Brave, Arc, Chromium and Vivaldi. Your browser also has to be on the **Allowed apps** list, or it's closed like any other app.
 - **Browsers it can't watch:** Firefox, Opera, Zen, DuckDuckGo, Orion and Tor Browser don't let other apps see their tabs. If one of them is an allowed app, every website in it works. Pomodoro warns you when you start a session, and the fix is to leave that browser off the allowed apps list.
 - **Adding sites:** type a site like `docs.google.com` or paste a full link. A site includes its subdomains, so `instructure.com` covers `myschool.instructure.com` (Canvas). Add a path to allow only part of a site: `google.com/search` allows Google searches but not Gmail or YouTube.
+- **Searching always works:** the Google, Bing, DuckDuckGo, Ecosia and Yahoo search pages and search results stay open in any allowed browser. Other parts of those sites, like Gmail, YouTube, Google Maps or Google News, still follow your list.
 - **Always allowed:** new-tab pages, browser settings, local files, and the Google, Microsoft, Apple, Okta and Duo sign-in pages, so logging in to Canvas or Google Docs keeps working. If your school's own login page gets closed, add it to your list.
 
 ### Giving permission the first time
@@ -103,6 +112,7 @@ If you clicked **Don't Allow**, Pomodoro shows a red warning during the session.
 | `pomodoro.py` | The app window: setup screen and live session screen |
 | `engine.py` | Schedule builder, session timer, app detection, and blocking (no GUI code, easy to test) |
 | `sites.py` | Website allow list: matching sites and closing browser tabs on macOS |
+| `updater.py` | Checks for a newer build and installs it in place (downloaded app only) |
 | `requirements.txt` | Python dependency (`psutil`) |
 | `Start Pomodoro.command` / `.bat` | Double-click launchers for Mac / Windows |
 | `.github/workflows/build.yml` | Builds the Mac and Windows apps and publishes the "latest" release |
