@@ -11,10 +11,26 @@ Go to the repo's **Releases** page (or the **latest** release) and download:
 - **Mac (Apple Silicon: M1/M2/M3/M4):** `Pomodoro-mac.zip`. Unzip it and move **Pomodoro** into Applications.
 - **Windows:** `Pomodoro-windows.exe`
 
-**Opening it the first time.** The app isn't signed by Apple or Microsoft, so your computer will ask you to confirm once:
+### Opening it the first time
 
-- **Mac:** double-click Pomodoro. When macOS says it can't be opened, go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Pomodoro. (On older macOS versions, right-click the app and choose **Open**.)
-- **Windows:** if SmartScreen appears, click **More info → Run anyway**.
+The app isn't signed by Apple or Microsoft, so your computer will ask you to confirm it once. This is expected and doesn't mean anything is wrong with the app.
+
+**Mac.** The first time you double-click Pomodoro, macOS shows a box titled **"Pomodoro" Not Opened**, saying Apple could not verify it is free of malware.
+
+1. Click **Done**. Don't click "Move to Trash".
+2. Open **System Settings → Privacy & Security**.
+3. Scroll down to the **Security** section. You'll see a line saying "Pomodoro" was blocked. Click **Open Anyway**.
+4. Enter your Mac password, then click **Open** on the final prompt.
+
+You only need to do this once. After that, Pomodoro opens normally. On older macOS versions you can instead right-click the app and choose **Open**.
+
+If the **Open Anyway** button doesn't appear, clear the block from Terminal (this assumes you moved the app into Applications), then double-click Pomodoro again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Pomodoro.app
+```
+
+**Windows.** If a blue SmartScreen box appears, click **More info → Run anyway**.
 
 These downloads are rebuilt automatically every time code is pushed to `main`.
 
@@ -57,6 +73,7 @@ During the session, the screen shows a countdown, what comes next, and a log of 
 
 ## Known limits (good for a "future work" slide)
 
+- The downloadable apps aren't signed, which is why first-time users see a security warning. Removing it would mean signing and notarizing the Mac app with an Apple Developer account ($99/year) and signing the Windows app with a code-signing certificate.
 - It's not tamper-proof. A determined user can kill Pomodoro from Task Manager or Activity Monitor.
 - It blocks apps, not websites. If your browser is allowed, every site in it is allowed. A browser extension or hosts-file blocking would be the next step.
 - On macOS, menu-bar apps (Dropbox, Rectangle, etc.) count as apps, so allow them if you want them to keep running.
