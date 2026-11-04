@@ -1,0 +1,58 @@
+# StudyLock
+
+A desktop focus timer for college students. You set up a study session (how long, when to take breaks, and which apps you're allowed to use). While you're studying, every other app is closed the moment it opens. During breaks, and once the session ends, everything unlocks.
+
+Works on **Windows** and **macOS** (Python 3.9+).
+
+## Run it
+
+```bash
+pip install -r requirements.txt
+python study_lock.py          # on macOS you may need: python3 study_lock.py
+```
+
+Tkinter (the window toolkit) ships with the python.org installers for Windows and macOS. If you see `No module named tkinter` on a Mac with Homebrew Python, run `brew install python-tk`.
+
+## How to use
+
+1. **Session length**: total minutes, breaks included.
+2. **Breaks**: e.g. a 10-minute break every 50 minutes. Set either value to 0 for no breaks. The plan line shows the exact schedule, and a session never ends on a break.
+3. **Allowed apps**: pick from the apps open right now (double-click or **Allow →**), or type a name (e.g. `Notion`, `WINWORD`, `Google Chrome`). Your choices are saved for next time.
+4. **Strict mode** (optional): hides the "End early" option and stops the window from being closed.
+5. Press **Start session**. StudyLock lists any open apps that will be closed so you can save your work first.
+
+During the session, the screen shows a countdown, what comes next, and a log of the apps it blocked. When a break starts or ends, the window chimes and jumps to the front.
+
+## How the blocking works
+
+- A background thread checks running apps about once a second during study blocks and closes any that aren't allowed (a gentle close first, then a force close if needed).
+- **Windows:** an "app" is any program with a visible window that lives outside `C:\Windows`. Programs in the Windows folder (Explorer, Task Manager, Settings, system services) are never touched. An app's background helper processes are closed along with it.
+- **macOS:** an "app" is anything in `/Applications` or `~/Applications`. System apps in `/System` (Finder, Terminal, System Settings, Activity Monitor) are never touched. Helper processes inside the app bundle count as part of the app.
+- Only your own user's apps are affected.
+- StudyLock never closes itself, Python, or whatever launched it (your terminal or code editor).
+
+## Known limits (good for a "future work" slide)
+
+- It's not tamper-proof. A determined user can kill StudyLock from Task Manager or Activity Monitor.
+- It blocks apps, not websites. If your browser is allowed, every site in it is allowed. A browser extension or hosts-file blocking would be the next step.
+- On macOS, menu-bar apps installed in `/Applications` (Dropbox, Rectangle, etc.) count as apps, so allow them if you want them to keep running.
+- On Windows, Store apps that run inside `ApplicationFrameHost` (Calculator, Photos) can't be told apart, so they aren't blocked.
+
+## Files
+
+| File | What it does |
+|---|---|
+| `study_lock.py` | The app window: setup screen and live session screen |
+| `engine.py` | Schedule builder, session timer, app detection, and blocking (no GUI code, easy to test) |
+| `requirements.txt` | Python dependency (`psutil`) |
+
+Settings are saved to `~/.studylock.json`.
+
+## Optional: make a double-clickable app
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --windowed --name StudyLock study_lock.py
+```
+
+The app ends up in `dist/`.
