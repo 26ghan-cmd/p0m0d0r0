@@ -1,0 +1,77 @@
+# Builds a double-clickable StudyLock app for macOS and Windows on every push
+# to main, and publishes them on the repo's Releases page under "latest".
+name: Build apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apps
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest      # Apple Silicon Macs
+            asset: StudyLock-mac.zip
+          - os: windows-latest
+            asset: StudyLock-windows.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+          python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller --noconfirm --windowed --name StudyLock \
+            --osx-bundle-identifier io.github.studylock study_lock.py
+          ditto -c -k --keepParent dist/StudyLock.app "${{ matrix.asset }}"
+
+      - name: Build Windows app
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name StudyLock study_lock.py
+          Copy-Item dist/StudyLock.exe "${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Publish "latest" release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest assets/* \
+            --target "${{ github.sha }}" \
+            --title "StudyLock (latest build)" \
+            --notes "Download **StudyLock-mac.zip** (Apple Silicon Macs) or **StudyLock-windows.exe** (Windows). First-time open instructions are in the README. Built from ${{ github.sha }}."

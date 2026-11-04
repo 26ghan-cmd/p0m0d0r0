@@ -2,13 +2,36 @@
 
 A desktop focus timer for college students. You set up a study session (how long, when to take breaks, and which apps you're allowed to use). While you're studying, every other app is closed the moment it opens. During breaks, and once the session ends, everything unlocks.
 
-Works on **Windows** and **macOS** (Python 3.9+).
+Works on **Windows** and **macOS**.
 
-## Run it
+## Get it (easiest: no Python needed)
+
+Go to the repo's **Releases** page (or the **latest** release) and download:
+
+- **Mac (Apple Silicon: M1/M2/M3/M4):** `StudyLock-mac.zip`. Unzip it and move **StudyLock** into Applications.
+- **Windows:** `StudyLock-windows.exe`
+
+**Opening it the first time.** The app isn't signed by Apple or Microsoft, so your computer will ask you to confirm once:
+
+- **Mac:** double-click StudyLock. When macOS says it can't be opened, go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to StudyLock. (On older macOS versions, right-click the app and choose **Open**.)
+- **Windows:** if SmartScreen appears, click **More info → Run anyway**.
+
+These downloads are rebuilt automatically every time code is pushed to `main`.
+
+## Run from the code (double-click launcher)
+
+Clone or download this repo, then double-click:
+
+- **Mac:** `Start StudyLock.command`
+- **Windows:** `Start StudyLock.bat`
+
+The first run installs what it needs (about 30 seconds). After that it opens right away. If Python isn't installed, the launcher opens the python.org download page for you. On a Mac, if the launcher is blocked the first time, right-click it and choose **Open**.
+
+Or run it from a terminal:
 
 ```bash
-pip install -r requirements.txt
-python study_lock.py          # on macOS you may need: python3 study_lock.py
+python3 -m pip install -r requirements.txt    # Windows: py -m pip install -r requirements.txt
+python3 study_lock.py                         # Windows: py study_lock.py
 ```
 
 Tkinter (the window toolkit) ships with the python.org installers for Windows and macOS. If you see `No module named tkinter` on a Mac with Homebrew Python, run `brew install python-tk`.
@@ -46,6 +69,8 @@ During the session, the screen shows a countdown, what comes next, and a log of 
 | `study_lock.py` | The app window: setup screen and live session screen |
 | `engine.py` | Schedule builder, session timer, app detection, and blocking (no GUI code, easy to test) |
 | `requirements.txt` | Python dependency (`psutil`) |
+| `Start StudyLock.command` / `.bat` | Double-click launchers for Mac / Windows |
+| `.github/workflows/build.yml` | Builds the Mac and Windows apps and publishes the "latest" release |
 
 Settings are saved to `~/.studylock.json`.
 
