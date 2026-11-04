@@ -1,4 +1,4 @@
-# Builds a double-clickable StudyLock app for macOS and Windows on every push
+# Builds a double-clickable Pomodoro app for macOS and Windows on every push
 # to main, and publishes them on the repo's Releases page under "latest".
 name: Build apps
 
@@ -21,9 +21,9 @@ jobs:
       matrix:
         include:
           - os: macos-latest      # Apple Silicon Macs
-            asset: StudyLock-mac.zip
+            asset: Pomodoro-mac.zip
           - os: windows-latest
-            asset: StudyLock-windows.exe
+            asset: Pomodoro-windows.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -41,15 +41,15 @@ jobs:
       - name: Build macOS app
         if: runner.os == 'macOS'
         run: |
-          pyinstaller --noconfirm --windowed --name StudyLock \
-            --osx-bundle-identifier io.github.studylock study_lock.py
-          ditto -c -k --keepParent dist/StudyLock.app "${{ matrix.asset }}"
+          pyinstaller --noconfirm --windowed --name Pomodoro \
+            --osx-bundle-identifier io.github.p0m0d0r0.pomodoro pomodoro.py
+          ditto -c -k --keepParent dist/Pomodoro.app "${{ matrix.asset }}"
 
       - name: Build Windows app
         if: runner.os == 'Windows'
         run: |
-          pyinstaller --noconfirm --onefile --windowed --name StudyLock study_lock.py
-          Copy-Item dist/StudyLock.exe "${{ matrix.asset }}"
+          pyinstaller --noconfirm --onefile --windowed --name Pomodoro pomodoro.py
+          Copy-Item dist/Pomodoro.exe "${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -73,5 +73,5 @@ jobs:
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest assets/* \
             --target "${{ github.sha }}" \
-            --title "StudyLock (latest build)" \
-            --notes "Download **StudyLock-mac.zip** (Apple Silicon Macs) or **StudyLock-windows.exe** (Windows). First-time open instructions are in the README. Built from ${{ github.sha }}."
+            --title "Pomodoro (latest build)" \
+            --notes "Download **Pomodoro-mac.zip** (Apple Silicon Macs) or **Pomodoro-windows.exe** (Windows). First-time open instructions are in the README. Built from ${{ github.sha }}."

@@ -1,11 +1,11 @@
 """
-StudyLock — study sessions that lock distracting apps.
+Pomodoro — study sessions that lock distracting apps.
 
 Pick a session length, optional breaks, and the apps you're allowed to use.
 During study blocks every other app is closed the moment it opens.
 During breaks (and when the session ends) everything is unlocked.
 
-Run:   python study_lock.py
+Run:   python pomodoro.py
 """
 import queue
 import sys
@@ -34,10 +34,10 @@ def minutes_text(seconds: int) -> str:
     return f"{m} min"
 
 
-class StudyLockApp:
+class PomodoroApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("StudyLock")
+        root.title("Pomodoro")
         root.minsize(620, 560)
 
         self.cfg = engine.load_config()
@@ -59,7 +59,7 @@ class StudyLockApp:
 
         if not engine.platform_supported():
             messagebox.showwarning(
-                "StudyLock",
+                "Pomodoro",
                 "App blocking only works on Windows and macOS.\n"
                 "The timer will still run, but no apps will be closed.")
 
@@ -285,7 +285,7 @@ class StudyLockApp:
             duration, every, blen = self._read_settings()
             schedule = engine.build_schedule(duration, every, blen)
         except ValueError as e:
-            messagebox.showerror("StudyLock", str(e))
+            messagebox.showerror("Pomodoro", str(e))
             return
 
         self.cfg.update(duration_min=duration, break_every_min=every, break_len_min=blen,
@@ -422,10 +422,10 @@ class StudyLockApp:
     def on_close(self):
         if self.session is not None:
             if self.var_strict.get():
-                messagebox.showwarning("StudyLock", "Strict mode is on — StudyLock stays open "
+                messagebox.showwarning("Pomodoro", "Strict mode is on — Pomodoro stays open "
                                                     "until the session ends.")
                 return
-            if not messagebox.askyesno("Quit StudyLock", "A session is running. End it and quit?"):
+            if not messagebox.askyesno("Quit Pomodoro", "A session is running. End it and quit?"):
                 return
             self._stop_session()
         self.root.destroy()
@@ -438,7 +438,7 @@ def main():
     except Exception:
         pass
     root = tk.Tk()
-    StudyLockApp(root)
+    PomodoroApp(root)
     root.mainloop()
 
 

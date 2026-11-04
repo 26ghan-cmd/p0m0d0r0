@@ -1,5 +1,5 @@
 #!/bin/bash
-# Double-click this file in Finder to start StudyLock on macOS.
+# Double-click this file in Finder to start Pomodoro on macOS.
 # First run sets things up (about 30 seconds); after that it opens right away.
 
 cd "$(dirname "$0")" || exit 1
@@ -25,7 +25,7 @@ for candidate in \
 done
 
 if [ -z "$PY" ]; then
-  echo "StudyLock needs Python 3."
+  echo "Pomodoro needs Python 3."
   echo "Opening the download page: install Python for macOS, then double-click this file again."
   open "https://www.python.org/downloads/macos/"
   pause_and_exit
@@ -33,12 +33,12 @@ fi
 
 # Private copy of the one dependency (psutil), kept in a hidden .venv folder.
 if ! .venv/bin/python -c "import psutil, tkinter" >/dev/null 2>&1; then
-  echo "First run: setting up StudyLock (about 30 seconds)..."
+  echo "First run: setting up Pomodoro (about 30 seconds)..."
   rm -rf .venv
   "$PY" -m venv .venv \
     && .venv/bin/python -m pip install --quiet --disable-pip-version-check -r requirements.txt \
     || { echo "Setup failed. Check your internet connection and try again."; pause_and_exit; }
 fi
 
-echo "Starting StudyLock. You can minimize this window, but keep it open while you study."
-exec .venv/bin/python study_lock.py
+echo "Starting Pomodoro. You can minimize this window, but keep it open while you study."
+exec .venv/bin/python pomodoro.py

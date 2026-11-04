@@ -1,5 +1,5 @@
 """
-StudyLock engine: session schedule, app detection, and app blocking.
+Pomodoro engine: session schedule, app detection, and app blocking.
 
 This file has no GUI code so it can be tested on its own.
 Supported platforms for blocking: Windows and macOS.
@@ -37,7 +37,7 @@ ESSENTIAL_MAC = [
 ESSENTIAL_WIN = [
     "WindowsTerminal", "OpenConsole", "SecHealthUI",  # terminal, Windows Security
 ]
-_ALWAYS_HIDDEN = ["python", "pythonw", "py", "python3", "Python Launcher", "IDLE", "StudyLock"]
+_ALWAYS_HIDDEN = ["python", "pythonw", "py", "python3", "Python Launcher", "IDLE", "Pomodoro"]
 
 ESSENTIAL_APPS = ESSENTIAL_MAC if IS_MAC else ESSENTIAL_WIN if IS_WINDOWS else []
 ALWAYS_ALLOWED = {n.lower() for n in ESSENTIAL_MAC + ESSENTIAL_WIN + _ALWAYS_HIDDEN}
@@ -47,7 +47,8 @@ ALWAYS_ALLOWED = {n.lower() for n in ESSENTIAL_MAC + ESSENTIAL_WIN + _ALWAYS_HID
 MAC_PROTECTED_PREFIXES = ("/System/Library/", "/Library/", "/usr/", "/bin/",
                           "/sbin/", "/opt/", "/private/var/db/")
 
-CONFIG_PATH = Path.home() / ".studylock.json"
+CONFIG_PATH = Path.home() / ".pomodoro.json"
+LEGACY_CONFIG_PATH = Path.home() / ".studylock.json"  # settings from before the rename
 DEFAULT_CONFIG = {
     "duration_min": 120,
     "break_every_min": 50,
@@ -271,8 +272,8 @@ def list_running_apps() -> Dict[str, List[psutil.Process]]:
 # Enforcement
 # --------------------------------------------------------------------------
 def _protected_pids() -> set:
-    """StudyLock's own process and everything that launched it (terminal,
-    code editor...). Closing those would close StudyLock too."""
+    """Pomodoro's own process and everything that launched it (terminal,
+    code editor...). Closing those would close Pomodoro too."""
     pids = set()
     try:
         p = psutil.Process()
@@ -359,10 +360,12 @@ class EnforcementLoop(threading.Thread):
 # --------------------------------------------------------------------------
 def load_config() -> dict:
     cfg = dict(DEFAULT_CONFIG)
-    try:
-        cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
-    except (OSError, ValueError):
-        pass
+    for path in (CONFIG_PATH, LEGACY_CONFIG_PATH):
+        try:
+            cfg.update(json.loads(path.read_text(encoding="utf-8")))
+            break
+        except (OSError, ValueError):
+            continue
     return cfg
 
 
