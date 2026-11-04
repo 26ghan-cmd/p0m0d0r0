@@ -21,13 +21,14 @@ Tkinter (the window toolkit) ships with the python.org installers for Windows an
 4. **Strict mode** (optional): hides the "End early" option and stops the window from being closed.
 5. Press **Start session**. StudyLock lists any open apps that will be closed so you can save your work first.
 
-During the session, the screen shows a countdown, what comes next, and a log of the apps it blocked. When a break starts or ends, the window chimes and jumps to the front.
+During the session, the screen shows a countdown, what comes next, and a log of the apps it blocked. When a break starts or ends, the window chimes and jumps to the front. When the session ends, a message on the setup screen shows how many distractions were blocked.
 
 ## How the blocking works
 
 - A background thread checks running apps about once a second during study blocks and closes any that aren't allowed (a gentle close first, then a force close if needed).
 - **Windows:** an "app" is any program with a visible window that lives outside `C:\Windows`. Programs in the Windows folder (Explorer, Task Manager, Settings, system services) are never touched. An app's background helper processes are closed along with it.
-- **macOS:** an "app" is anything in `/Applications` or `~/Applications`. System apps in `/System` (Finder, Terminal, System Settings, Activity Monitor) are never touched. Helper processes inside the app bundle count as part of the app.
+- **macOS:** an "app" is any `.app` you can open, wherever it lives: `/Applications`, Apple's built-in apps (Safari, Messages, Mail, Music, FaceTime, Notes…), or an app run from Downloads. Helper processes inside the app bundle count as part of the app. System services in `/System/Library`, `/Library` and `~/Library` (Dock, menu bar, Spotlight, Control Center, background helpers) are never touched.
+- **Essential apps are never blocked**, even if they're not on your allowed list. On macOS: System Settings, Finder, Activity Monitor, Terminal, iTerm, Console, Disk Utility, Keychain Access, Passwords, Screenshot, Software Update, Installer, Archive Utility. On Windows: Settings, Task Manager, Explorer and everything else in `C:\Windows`, plus Windows Terminal and Windows Security.
 - Only your own user's apps are affected.
 - StudyLock never closes itself, Python, or whatever launched it (your terminal or code editor).
 
@@ -35,7 +36,7 @@ During the session, the screen shows a countdown, what comes next, and a log of 
 
 - It's not tamper-proof. A determined user can kill StudyLock from Task Manager or Activity Monitor.
 - It blocks apps, not websites. If your browser is allowed, every site in it is allowed. A browser extension or hosts-file blocking would be the next step.
-- On macOS, menu-bar apps installed in `/Applications` (Dropbox, Rectangle, etc.) count as apps, so allow them if you want them to keep running.
+- On macOS, menu-bar apps (Dropbox, Rectangle, etc.) count as apps, so allow them if you want them to keep running.
 - On Windows, Store apps that run inside `ApplicationFrameHost` (Calculator, Photos) can't be told apart, so they aren't blocked.
 
 ## Files

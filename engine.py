@@ -25,12 +25,27 @@ IS_MAC = sys.platform == "darwin"
 # otherwise the leftover time is added to the last study block.
 MIN_STUDY_AFTER_BREAK = 5 * 60
 
-# Never closed, even if not on the allowed list (StudyLock itself and terminals).
-ALWAYS_ALLOWED = {
-    "python", "pythonw", "py", "python3",
-    "windowsterminal", "openconsole",
-    "studylock",
-}
+# Essential apps: NEVER closed, no matter what the allowed list says.
+# (Core system processes like the Dock, menu bar, Spotlight and Explorer are
+# also never touched, because they live in protected system folders.)
+ESSENTIAL_MAC = [
+    "System Settings", "System Preferences", "Finder", "Activity Monitor",
+    "Terminal", "iTerm", "iTerm2", "Console", "Disk Utility", "Keychain Access",
+    "Passwords", "Screenshot", "Software Update", "Installer", "Archive Utility",
+    "Accessibility Inspector", "VoiceOver Utility",
+]
+ESSENTIAL_WIN = [
+    "WindowsTerminal", "OpenConsole", "SecHealthUI",  # terminal, Windows Security
+]
+_ALWAYS_HIDDEN = ["python", "pythonw", "py", "python3", "Python Launcher", "IDLE", "StudyLock"]
+
+ESSENTIAL_APPS = ESSENTIAL_MAC if IS_MAC else ESSENTIAL_WIN if IS_WINDOWS else []
+ALWAYS_ALLOWED = {n.lower() for n in ESSENTIAL_MAC + ESSENTIAL_WIN + _ALWAYS_HIDDEN}
+
+# macOS locations that hold system services and background helpers, never apps
+# the user opens. Anything here is left alone.
+MAC_PROTECTED_PREFIXES = ("/System/Library/", "/Library/", "/usr/", "/bin/",
+                          "/sbin/", "/opt/", "/private/var/db/")
 
 CONFIG_PATH = Path.home() / ".studylock.json"
 DEFAULT_CONFIG = {
@@ -150,21 +165,21 @@ def normalize(name: str) -> str:
 def mac_identity(exe: str, home: str) -> Optional[str]:
     """App name for a macOS process, or None if it isn't a user app.
 
-    Uses the outermost .app bundle, so helper processes (e.g. 'Google Chrome
-    Helper') count as their parent app. Only apps in /Applications or
-    ~/Applications count; system apps in /System are never touched.
+    Any process inside a .app bundle counts, wherever the app lives
+    (/Applications, Apple's built-in apps like Safari and Messages, apps run
+    from Downloads...). The outermost bundle is used, so helper processes
+    ('Google Chrome Helper') count as their parent app. System services in
+    /System/Library, /Library and ~/Library are never touched.
     """
-    if not exe:
+    if not exe or ".app/" not in exe:
         return None
-    parts = exe.split("/")
-    user_apps = home.rstrip("/") + "/Applications"
-    for i, part in enumerate(parts):
+    if exe.startswith(MAC_PROTECTED_PREFIXES):
+        return None
+    if exe.startswith(home.rstrip("/") + "/Library/"):
+        return None
+    for part in exe.split("/"):
         if part.endswith(".app"):
-            parent = "/".join(parts[:i])
-            if (parent == "/Applications" or parent.startswith("/Applications/")
-                    or parent == user_apps or parent.startswith(user_apps + "/")):
-                return part[:-4]
-            return None
+            return part[:-4]
     return None
 
 
@@ -222,19 +237,23 @@ def list_running_apps() -> Dict[str, List[psutil.Process]]:
 
     Windows: apps that currently have a visible window (background helpers
     of those apps are included so the whole app closes).
-    macOS: apps installed in /Applications or ~/Applications.
+    macOS: any app bundle outside the protected system folders.
     """
     if not platform_supported():
         return {}
     me = _current_user()
+    if me is None:
+        return {}
     home = str(Path.home())
     windir = os.environ.get("SystemRoot", r"C:\Windows")
     apps: Dict[str, List[psutil.Process]] = {}
-    for proc in psutil.process_iter(["pid", "exe", "username"]):
-        info = proc.info
-        if me is None or info.get("username") != me:
+    for proc in psutil.process_iter(["username"]):
+        if proc.info.get("username") != me:
             continue
-        exe = info.get("exe") or ""
+        try:
+            exe = proc.exe() or ""
+        except psutil.Error:
+            continue
         ident = mac_identity(exe, home) if IS_MAC else windows_identity(exe, windir)
         if ident:
             apps.setdefault(ident, []).append(proc)
@@ -285,22 +304,27 @@ class Enforcer:
 
     def sweep(self) -> List[str]:
         """Close every app that isn't allowed. Returns names of apps closed."""
-        closed = []
-        for name, procs in self.blocked_now().items():
+        blocked = self.blocked_now()
+        if not blocked:
+            return []
+        owner = {}
+        for name, procs in blocked.items():
             for p in procs:
+                owner[p.pid] = name
                 try:
                     p.terminate()
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
-            gone, alive = psutil.wait_procs(procs, timeout=1.0)
-            for p in alive:
-                try:
-                    p.kill()
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-            if gone or any(not p.is_running() for p in alive):
-                closed.append(name)
-        return closed
+        # One shared wait for all apps, then force-close anything still open.
+        everything = [p for procs in blocked.values() for p in procs]
+        gone, alive = psutil.wait_procs(everything, timeout=1.0)
+        for p in alive:
+            try:
+                p.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        closed_pids = {p.pid for p in gone} | {p.pid for p in alive if not p.is_running()}
+        return sorted({owner[pid] for pid in closed_pids})
 
 
 class EnforcementLoop(threading.Thread):

@@ -8,6 +8,8 @@ During breaks (and when the session ends) everything is unlocked.
 Run:   python study_lock.py
 """
 import queue
+import sys
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import messagebox, ttk
@@ -45,6 +47,9 @@ class StudyLockApp:
         self.closed_queue = queue.Queue()
         self.closed_counts = {}
         self.last_phase = None
+        self.running_names = []
+        self.scan_results = queue.Queue()
+        self.scanning = False
 
         self._fonts()
         self.setup_frame = self._build_setup()
@@ -132,9 +137,21 @@ class StudyLockApp:
                             "before starting. Not open yet? Type its name, e.g. Notion or WINWORD.",
                   foreground=MUTED, font=self.f_small, wraplength=560).grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        if engine.ESSENTIAL_APPS:
+            ttk.Label(add, text="Always allowed (never blocked): "
+                                + ", ".join(engine.ESSENTIAL_APPS) + ", plus core system parts "
+                                "like the menu bar, Dock and Spotlight.",
+                      foreground=MUTED, font=self.f_small, wraplength=560).grid(
+                row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
-        ttk.Button(f, text="Start session", command=self.start).grid(
-            row=4, column=0, sticky="e", pady=(14, 0), ipadx=12, ipady=4)
+        bottom = ttk.Frame(f)
+        bottom.grid(row=4, column=0, sticky="ew", pady=(14, 0))
+        bottom.columnconfigure(0, weight=1)
+        self.lbl_banner = tk.Label(bottom, text="", fg=BREAK_COLOR, anchor="w",
+                                   justify="left", wraplength=400)
+        self.lbl_banner.grid(row=0, column=0, sticky="w")
+        ttk.Button(bottom, text="Start session", command=self.start).grid(
+            row=0, column=1, sticky="e", ipadx=12, ipady=4)
         return f
 
     def _build_session(self) -> ttk.Frame:
@@ -182,12 +199,33 @@ class StudyLockApp:
         return engine.normalize(name) in {engine.normalize(a) for a in self.allowed}
 
     def refresh_running(self):
+        """Scan open apps on a background thread so the window never freezes."""
+        if self.scanning:
+            return
+        self.scanning = True
+
+        def work():
+            try:
+                names = sorted(engine.list_running_apps().keys(), key=str.lower)
+            except Exception:
+                names = []
+            self.scan_results.put(names)
+
+        threading.Thread(target=work, daemon=True).start()
+        self.root.after(100, self._poll_scan)
+
+    def _poll_scan(self):
         try:
-            names = sorted(engine.list_running_apps().keys(), key=str.lower)
-        except Exception:
-            names = []
+            self.running_names = self.scan_results.get_nowait()
+        except queue.Empty:
+            self.root.after(100, self._poll_scan)
+            return
+        self.scanning = False
+        self._fill_running()
+
+    def _fill_running(self):
         self.lb_running.delete(0, "end")
-        for n in names:
+        for n in self.running_names:
             if not self._is_allowed(n) and engine.normalize(n) not in engine.ALWAYS_ALLOWED:
                 self.lb_running.insert("end", n)
 
@@ -207,19 +245,19 @@ class StudyLockApp:
         for i in self.lb_running.curselection():
             self._add(self.lb_running.get(i))
         self.refresh_allowed()
-        self.refresh_running()
+        self._fill_running()
 
     def remove_selected(self):
         drop = {engine.normalize(self.lb_allowed.get(i)) for i in self.lb_allowed.curselection()}
         self.allowed = [a for a in self.allowed if engine.normalize(a) not in drop]
         self.refresh_allowed()
-        self.refresh_running()
+        self._fill_running()
 
     def add_manual(self):
         self._add(self.var_manual.get())
         self.var_manual.set("")
         self.refresh_allowed()
-        self.refresh_running()
+        self._fill_running()
 
     # ------------------------------------------------------------ session
     def _read_settings(self):
@@ -269,6 +307,7 @@ class StudyLockApp:
         if not messagebox.askokcancel("Start session", msg.strip()):
             return
 
+        self.lbl_banner.config(text="")
         self.session = engine.Session(schedule)
         self.closed_counts = {}
         self.lb_closed.delete(0, "end")
@@ -327,10 +366,16 @@ class StudyLockApp:
 
     def _get_attention(self):
         self.root.bell()
-        self.root.deiconify()
-        self.root.lift()
-        self.root.attributes("-topmost", True)
-        self.root.after(1500, lambda: self.root.attributes("-topmost", False))
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            if sys.platform.startswith("win"):
+                self.root.attributes("-topmost", True)
+                self.root.after(1500, lambda: self.root.attributes("-topmost", False))
+            else:
+                self.root.focus_force()
+        except tk.TclError:
+            pass
 
     def _drain_closed(self):
         changed = False
@@ -363,16 +408,16 @@ class StudyLockApp:
         early = self.session.ended_early
         self._drain_closed()
         blocked = sum(self.closed_counts.values())
-        self._stop_session()
-        self._get_attention()
+        self._stop_session()  # signals the blocker thread; never waits on it
+        # No popup here: a modal dialog at this moment is what froze macOS.
         if early:
-            messagebox.showinfo("StudyLock", "Session ended early. All apps are unlocked.")
+            self.lbl_banner.config(text="Session ended early. All apps are unlocked.")
         else:
-            messagebox.showinfo(
-                "StudyLock",
-                f"Session complete — nice work!\n\nDistractions blocked: {blocked}\n"
-                "All apps are unlocked.")
+            self.lbl_banner.config(
+                text=f"✓ Session complete, nice work! Distractions blocked: {blocked}. "
+                     "All apps are unlocked.")
         self.show_setup()
+        self._get_attention()
 
     def on_close(self):
         if self.session is not None:
